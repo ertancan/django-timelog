@@ -1,7 +1,6 @@
 import logging
 import timeit
 
-from django.db import connection
 from django.utils.encoding import smart_str
 
 logger = logging.getLogger(__name__)
@@ -16,19 +15,12 @@ class TimeLogMiddleware(object):
         start = timeit.default_timer()
         response = self.get_response(request)
 
-        sqltime = 0.0
-
-        for q in connection.queries:
-            sqltime += float(getattr(q, 'time', 0.0))
-
         d = {
             'method': request.method,
             'time': timeit.default_timer() - start,
             'code': response.status_code,
             'url': smart_str(request.path_info),
-            'sql': len(connection.queries),
-            'sqltime': sqltime,
         }
-        msg = '%(method)s "%(url)s" (%(code)s) %(time).2f (%(sql)dq, %(sqltime).4f)' % d
+        msg = '%(method)s "%(url)s" (%(code)s) %(time).2f' % d
         logger.info(msg)
         return response

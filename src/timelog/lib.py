@@ -13,25 +13,54 @@ CACHED_VIEWS = {}
 
 IGNORE_PATHS = getattr(settings, 'TIMELOG_IGNORE_URIS', ())
 
+
+def getTerminalWidth():
+
+    import os
+    env = os.environ
+
+    def ioctl_GWINSZ(fd):
+        try:
+            import fcntl, termios, struct
+            cr = struct.unpack('hh', fcntl.ioctl(fd, termios.TIOCGWINSZ, '1234'))
+        except:
+            return None
+        return cr
+    cr = ioctl_GWINSZ(0) or ioctl_GWINSZ(1) or ioctl_GWINSZ(2)
+    if not cr:
+        try:
+            fd = os.open(os.ctermid(), os.O_RDONLY)
+            cr = ioctl_GWINSZ(fd)
+            os.close(fd)
+        except:
+            pass
+    if not cr:
+        try:
+            cr = (env['LINES'], env['COLUMNS'])
+        except:
+            cr = (25, 80)
+    return int(cr[1])
+
+
 def count_lines_in(filename):
     "Count lines in a file"
-    f = open(filename)                  
+    f = open(filename)
     lines = 0
     buf_size = 1024 * 1024
     read_f = f.read # loop optimization
-    
+
     buf = read_f(buf_size)
     while buf:
         lines += buf.count('\n')
         buf = read_f(buf_size)
-    
+
     return lines
 
 def view_name_from(path):
     "Resolve a path to the full python module name of the related view function"
     try:
         return CACHED_VIEWS[path]
-        
+
     except KeyError:
         view = resolve(path)
         module = path
@@ -40,23 +69,20 @@ def view_name_from(path):
             module = resolve(path).func.__module__
         if hasattr(view.func, '__name__'):
             name = resolve(path).func.__name__
-        
+
         view =  "%s.%s" % (module, name)
         CACHED_VIEWS[path] = view
         return view
 
 def generate_table_from(data):
     "Output a nicely formatted ascii table"
-    table = Texttable(max_width=120)
-    table.add_row(["view", "method", "status", "count", "minimum", "maximum", "mean", "stdev", "queries", "querytime"]) 
-    table.set_cols_align(["l", "l", "l", "r", "r", "r", "r", "r", "r", "r"])
+    table = Texttable(max_width=getTerminalWidth())
+    table.add_row(["view", "method", "status", "count", "minimum", "maximum", "mean", "stdev"])
+    table.set_cols_align(["l", "l", "l", "r", "r", "r", "r", "r"])
 
     for item in sorted(data):
         mean = round(sum(data[item]['times'])/data[item]['count'], 3)
 
-        mean_sql = round(sum(data[item]['sql'])/data[item]['count'], 3)
-        mean_sqltime = round(sum(data[item]['sqltime'])/data[item]['count'], 3)
-        
         sdsq = sum([(i - mean) ** 2 for i in data[item]['times']])
         try:
             stdev = '%.2f' % ((sdsq / (len(data[item]['times']) - 1)) ** .5)
@@ -65,7 +91,7 @@ def generate_table_from(data):
 
         minimum = "%.2f" % min(data[item]['times'])
         maximum = "%.2f" % max(data[item]['times'])
-        table.add_row([data[item]['view'], data[item]['method'], data[item]['status'], data[item]['count'], minimum, maximum, '%.3f' % mean, stdev, mean_sql, mean_sqltime])
+        table.add_row([data[item]['view'], data[item]['method'], data[item]['status'], data[item]['count'], minimum, maximum, '%.3f' % mean, stdev])
 
     return table.draw()
 
@@ -75,23 +101,24 @@ def analyze_log_file(logfile, pattern, reverse_paths=True, progress=True):
         lines = count_lines_in(logfile)
         pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=lines+1).start()
         counter = 0
-    
+
     data = {}
-    
+
     compiled_pattern = compile(pattern)
     for line in fileinput.input([logfile]):
-        
+
         if progress:
             counter = counter + 1
-        
-        parsed = compiled_pattern.findall(line)[0]
+
+        parsed = compiled_pattern.findall(line)
+        if not parsed:
+            continue
+        parsed = parsed[0]
         date = parsed[0]
         method = parsed[1]
         path = parsed[2]
         status = parsed[3]
         time = parsed[4]
-        sql = parsed[5]
-        sqltime = parsed[6]
 
         try:
             ignore = False
@@ -108,25 +135,22 @@ def analyze_log_file(logfile, pattern, reverse_paths=True, progress=True):
                 try:
                     data[key]['count'] = data[key]['count'] + 1
                     data[key]['times'].append(float(time))
-                    data[key]['sql'].append(int(sql))
-                    data[key]['sqltime'].append(float(sqltime))
+
                 except KeyError:
                     data[key] = {
                         'count': 1,
                         'status': status,
                         'view': view,
                         'method': method,
-                        'times': [float(time)],
-                        'sql': [int(sql)],
-                        'sqltime': [float(sqltime)],
+                        'times': [float(time)]
                     }
         except Resolver404:
             pass
-        
+
         if progress:
             pbar.update(counter)
-    
+
     if progress:
         pbar.finish()
-    
+
     return data
