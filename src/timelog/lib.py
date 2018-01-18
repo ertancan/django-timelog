@@ -7,7 +7,7 @@ from progressbar import ProgressBar, Percentage, Bar
 
 from django.core.urlresolvers import resolve, Resolver404
 
-PATTERN = r"""^([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8},[0-9]{3}) (GET|POST|PUT|DELETE|HEAD) "(.*)" \((.*)\) (.*?) \((\d+)q, (.*?)\)"""
+PATTERN = r"""^([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8},[0-9]{3}) (GET|POST|PUT|DELETE|HEAD) "(.*)" \((.*)\) (\d+\.\d+)"""
 
 CACHED_VIEWS = {}
 
@@ -106,7 +106,7 @@ def analyze_log_file(logfile, pattern, reverse_paths=True, progress=True):
 
     compiled_pattern = compile(pattern)
     for line in fileinput.input([logfile]):
-
+        print(line)
         if progress:
             counter = counter + 1
 
